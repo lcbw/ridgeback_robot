@@ -39,73 +39,148 @@
 #include <string>
 #include <vector>
 
-#include "hardware_interface/joint_state_interface.h"
-#include "hardware_interface/joint_command_interface.h"
-#include "hardware_interface/robot_hw.h"
-#include "ros/ros.h"
-#include "sensor_msgs/JointState.h"
-#include "puma_motor_driver/socketcan_gateway.h"
-#include "puma_motor_driver/driver.h"
-#include "puma_motor_driver/multi_driver_node.h"
-#include "puma_motor_msgs/MultiFeedback.h"
+#include <boost/shared_ptr.hpp>
+#include <boost/thread.hpp>
+#include <hardware_interface/base_interface.hpp>
+#include <hardware_interface/handle.hpp>
+#include <hardware_interface/hardware_info.hpp>
+#include <hardware_interface/system_interface.hpp>
+#include <hardware_interface/types/hardware_interface_return_values.hpp>
+#include <hardware_interface/types/hardware_interface_status_values.hpp>
+#include <puma_motor_driver/driver.hpp>
+#include <puma_motor_driver/multi_driver_node.hpp>
+#include <puma_motor_driver/socketcan_gateway.hpp>
+#include <puma_motor_msgs/msg/multi_feedback.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+
+#include "ridgeback_base_parameters.hpp"
 
 namespace ridgeback_base
 {
 
-class RidgebackHardware : public hardware_interface::RobotHW
+class RidgebackHardware
+    : public hardware_interface::BaseInterface<hardware_interface::SystemInterface>
 {
 public:
-  RidgebackHardware(ros::NodeHandle& nh, ros::NodeHandle& pnh,
-                    puma_motor_driver::Gateway& gateway);
-  void init();  // Connect to CAN
-  bool connectIfNotConnected();  // Keep trying till it connects
-  std::vector<puma_motor_driver::Driver>& getDrivers();
-  void configure();  // Configures the motor drivers
-  void verify();
-  bool isActive();
-  bool areAllDriversActive();
+    hardware_interface::return_type configure(const hardware_interface::HardwareInfo &info) override;
 
-  void powerHasNotReset();  // Checks if power has been reset
-  bool inReset();  // Returns if the cm should be reset based on the state of the motors drivers.
-                   // If they have been configured.
-  void requestData();
-  void updateJointsFromHardware();
-  void command();
-  void canRead();
+    std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+
+    std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
+
+    hardware_interface::return_type start() override; //this replaces init
+
+    hardware_interface::return_type stop() override;
+
+    hardware_interface::return_type read() override;
+
+    hardware_interface::return_type write() override;
+
+    /** Makes a single attempt to connect to the CAN bus if not connected.
+   *  @return true if connected; false if not connected
+   * */
+    bool connectIfNotConnected(); // Keep trying till it connects
+
+    void configure(); // Configures the motor drivers
+    /** Validates the parameters for the motor drivers */
+    void verify();
+
+    /** Determines if the robot is active and updates the state.
+   *  @return true if the robot is active (drivers configured); else false
+   */
+    bool isActive();
+    /** Determines if ALL drivers are active.
+   *  @return true all are active; else false
+   */
+    bool areAllDriversActive();
+
+    /** Checks each driver to see if power has been reset and resets the
+   *  driver if needed.
+   */
+    void powerHasNotReset(); // Checks if power has been reset
+
+    /** Checks to see if the motor drivers are configured.
+   *  @return true if the motor drivers are not configured; false if configured
+   */
+    bool inReset(); // Returns if the cm should be reset based on the state of the motors drivers.
+                    // If they have been configured.
+    /** Requests the power state of each motor driver */
+    void requestData();
+    /** Populates the internal joint state struct from the most recent CAN data
+   *  received from the motor controller. Called from the controller thread.
+   */
+    void updateJointsFromHardware();
+    /** Populates and publishes Drive message based on the controller outputs.
+   *  Called from the controller thread.
+   */
+    void command();
+    /** Processes all received messages through the connected driver instances. */
+    void canRead();
+
+    void canReadThread();
+
+    /** Sends all queued data to Puma motor driver the gateway. */
+    void canSend();
+
+protected:
+    std::shared_ptr<ridgeback_base::ParamListener> param_listener_;
+    Params params_;
 
 private:
-  ros::NodeHandle nh_, pnh_;
+    std::shared_ptr<rclcpp::Node> nh_;
 
-  puma_motor_driver::Gateway& gateway_;
-  std::vector<puma_motor_driver::Driver> drivers_;
-  std::shared_ptr<puma_motor_driver::MultiDriverNode> multi_driver_node_;
+    //    puma_motor_driver::Gateway &gateway_;
+    /** Gateway for Puma motor driver */
+    std::shared_ptr<puma_motor_driver::Gateway> gateway_;
 
-  bool active_;
-  double gear_ratio_;
-  int encoder_cpr_;
+    // PID constants
+    static constexpr auto GAIN_P = 0.1;
+    static constexpr auto GAIN_I = 0.01;
+    static constexpr auto GAIN_D = 0.0;
 
-  // PID constants
-  static constexpr auto GAIN_P = 0.1;
-  static constexpr auto GAIN_I = 0.01;
-  static constexpr auto GAIN_D = 0.0;
+    // ROS Control2 interfaces
 
-  // ROS Control interfaces
-  hardware_interface::JointStateInterface joint_state_interface_;
-  hardware_interface::VelocityJointInterface velocity_joint_interface_;
+    /** Indicates if the drivers are configured */
+    bool active_;
 
-  // These are mutated on the controls thread only.
-  struct Joint
-  {
-    double position;
-    double velocity;
-    double effort;
-    double velocity_command;
+    /** The gear ratio for the motors */
+    double gear_ratio_;
 
-    Joint() : position(0), velocity(0), effort(0), velocity_command(0)
+    /** The number of encoding steps per revolution */
+    int encoder_cpr_;
+
+    /** The PID gains for the motor controller */
+    double gain_p_, gain_i_, gain_d_;
+
+    /** Indicates if the motor direction should be flipped */
+    bool flip_motor_direction_;
+
+    /** Puma motor drivers (2 or 4) */
+    std::vector<puma_motor_driver::Driver> drivers_;
+
+    /** Puma multi-node driver */
+    std::shared_ptr<puma_motor_driver::MultiDriverNode> multi_driver_node_;
+
+    std::thread can_read_thread_;
+
+    std::vector<puma_motor_driver::Driver> &getDrivers();
+
+    // These are mutated on the controls thread only.
+    struct Joint
     {
-    }
-  }
-  joints_[4];
+        double position;
+        double velocity;
+        double effort;
+        double velocity_command;
+
+        Joint()
+            : position(0)
+            , velocity(0)
+            , effort(0)
+            , velocity_command(0)
+        {}
+    } joints_[4];
 };
 
 }  // namespace ridgeback_base

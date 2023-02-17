@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<package format="2">
+<package format="3">
   <name>ridgeback_base</name>
   <version>0.4.2</version>
   <description>Ridgeback's mobility and sensor base.</description>
@@ -13,11 +13,16 @@
 
   <url type="website">http://wiki.ros.org/Robots/Ridgeback</url>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>hardware_interface</build_depend>
-  <build_depend>roscpp</build_depend>
+  <build_depend>builtin_interfaces</build_depend>
 
+  <depend>hardware_interface</depend>
+  <depend>rclcpp</depend>
+  <depend>ros2_control</depend>
+  <depend>ros2_controllers</depend>
+  <depend>generate_parameter_library</depend>
+  <depend>backward_ros</depend>
   <depend>controller_manager</depend>
   <depend>diagnostic_updater</depend>
   <depend>geometry_msgs</depend>
@@ -25,9 +30,16 @@
   <depend>puma_motor_msgs</depend>
   <depend version_gte="0.3.0">puma_motor_driver</depend>
   <depend>realtime_tools</depend>
-  <depend>rosserial_server</depend>
   <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>eigen</depend>
+  <depend>tf2</depend>
+  <depend>tf2_msgs</depend>
+  <depend>boost</depend>
+  <depend>rcpputils</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>pluginlib</depend>
 
   <exec_depend>diagnostic_aggregator</exec_depend>
   <exec_depend>diff_drive_controller</exec_depend>
@@ -35,15 +47,12 @@
   <exec_depend>ridgeback_control</exec_depend>
   <exec_depend>ridgeback_description</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
-  <exec_depend>rosserial_python</exec_depend>
+  <!-- exec_depend>rosserial_python</exec_depend -->
   <exec_depend>teleop_twist_joy</exec_depend>
-  <exec_depend>tf</exec_depend>
   <exec_depend>topic_tools</exec_depend>
   <exec_depend>socat</exec_depend>
 
-  <test_depend>roslaunch</test_depend>
-  <test_depend>roslint</test_depend>
-
   <export>
+      <build_type>ament_cmake</build_type>
   </export>
 </package>

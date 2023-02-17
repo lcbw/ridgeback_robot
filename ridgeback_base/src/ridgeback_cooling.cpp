@@ -35,43 +35,48 @@
 
 #include "ridgeback_base/ridgeback_cooling.h"
 
+namespace ridgeback_base {
 
-namespace ridgeback_base
+RidgebackCooling::RidgebackCooling(std::shared_ptr<rclcpp::Node> nh)
+    : nh_(nh)
+    , charger_disconnected_(true)
 {
+    cmd_fans_pub_ = nh_->create_publisher<ridgeback_msgs::msg::Fans>("mcu/cmd_fans", 1);
 
-RidgebackCooling::RidgebackCooling(ros::NodeHandle* nh) :
-  nh_(nh),
-  charger_disconnected_(true)
-{
-  cmd_fans_pub_ = nh_->advertise<ridgeback_msgs::Fans>("mcu/cmd_fans", 1);
+    status_sub_ = nh_->create_subscription<ridgeback_msgs::msg::Status>(
+        "mcu/status", 1, std::bind(&RidgebackCooling::statusCallback, this, std::placeholders::_1));
 
-  status_sub_ = nh_->subscribe("mcu/status", 1, &RidgebackCooling::statusCallback, this);
-  cmd_vel_sub_ = nh_->subscribe("cmd_vel", 1, &RidgebackCooling::cmdVelCallback, this);
+    cmd_vel_sub_ = nh_->create_subscription<geometry_msgs::msg::Twist>(
+        "cmd_vel", 1, std::bind(&RidgebackCooling::cmdVelCallback, this, std::placeholders::_1));
 
-  cmd_fans_timer_ = nh_->createTimer(ros::Duration(1.0/10), &RidgebackCooling::cmdFansCallback, this);
+    cmd_fans_timer_ = nh_->create_wall_timer(std::chrono::milliseconds(100),
+                                             std::bind(&RidgebackCooling::cmdFansCallback, this));
 
-  for (std::size_t i = 0; i < 6; i++)
-  {
-    cmd_fans_msg_.fans[i] = ridgeback_msgs::Fans::FAN_ON_LOW;
-  }
+    for (std::size_t i = 0; i < 6; i++) {
+        cmd_fans_msg_.fans[i] = ridgeback_msgs::msg::Fans::FAN_ON_LOW;
+    }
 }
 
-void RidgebackCooling::statusCallback(const ridgeback_msgs::Status::ConstPtr& status)
+void RidgebackCooling::statusCallback(const ridgeback_msgs::msg::Status::SharedPtr status)
 {
   if (status->charger_connected)
   {
-    cmd_fans_msg_.fans[ridgeback_msgs::Fans::CHARGER_BAY_INTAKE] = ridgeback_msgs::Fans::FAN_ON_HIGH;
-    cmd_fans_msg_.fans[ridgeback_msgs::Fans::CHARGER_BAY_EXHAUST] = ridgeback_msgs::Fans::FAN_ON_HIGH;
-    charger_disconnected_ = false;
+      cmd_fans_msg_.fans[ridgeback_msgs::msg::Fans::CHARGER_BAY_INTAKE]
+          = ridgeback_msgs::msg::Fans::FAN_ON_HIGH;
+      cmd_fans_msg_.fans[ridgeback_msgs::msg::Fans::CHARGER_BAY_EXHAUST]
+          = ridgeback_msgs::msg::Fans::FAN_ON_HIGH;
+      charger_disconnected_ = false;
   }
   else if (!charger_disconnected_)
   {
-    cmd_fans_msg_.fans[ridgeback_msgs::Fans::CHARGER_BAY_INTAKE] = ridgeback_msgs::Fans::FAN_ON_LOW;
-    cmd_fans_msg_.fans[ridgeback_msgs::Fans::CHARGER_BAY_EXHAUST] = ridgeback_msgs::Fans::FAN_ON_LOW;
-    charger_disconnected_ = true;
+      cmd_fans_msg_.fans[ridgeback_msgs::msg::Fans::CHARGER_BAY_INTAKE]
+          = ridgeback_msgs::msg::Fans::FAN_ON_LOW;
+      cmd_fans_msg_.fans[ridgeback_msgs::msg::Fans::CHARGER_BAY_EXHAUST]
+          = ridgeback_msgs::msg::Fans::FAN_ON_LOW;
+      charger_disconnected_ = true;
   }
 }
-void RidgebackCooling::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& twist)
+void RidgebackCooling::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr twist)
 {
   if (fabs(twist->linear.x) >= LINEAR_VEL_THRESHOLD ||
       fabs(twist->linear.y) >= LINEAR_VEL_THRESHOLD ||
@@ -79,22 +84,21 @@ void RidgebackCooling::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& twis
   {
     for (std::size_t i = 0; i < 6; i++)
     {
-      cmd_fans_msg_.fans[i] = ridgeback_msgs::Fans::FAN_ON_HIGH;
+        cmd_fans_msg_.fans[i] = ridgeback_msgs::msg::Fans::FAN_ON_HIGH;
     }
   }
-  last_motion_cmd_time_ = ros::Time::now().toSec();
+  last_motion_cmd_time_ = nh_->get_clock()->now();
 }
 
-void RidgebackCooling::cmdFansCallback(const ros::TimerEvent&)
+void RidgebackCooling::cmdFansCallback()
 {
-  if ((ros::Time::now().toSec() - last_motion_cmd_time_ > MOITON_COMMAND_TIMEOUT) && charger_disconnected_)
-  {
-    for (std::size_t i = 0; i < 6; i++)
-    {
-      cmd_fans_msg_.fans[i] = ridgeback_msgs::Fans::FAN_ON_LOW;
+    if (((nh_->get_clock()->now() - last_motion_cmd_time_).seconds() > MOITON_COMMAND_TIMEOUT)
+        && charger_disconnected_) {
+        for (std::size_t i = 0; i < 6; i++) {
+            cmd_fans_msg_.fans[i] = ridgeback_msgs::msg::Fans::FAN_ON_LOW;
+        }
     }
-  }
-  cmd_fans_pub_.publish(cmd_fans_msg_);
+    cmd_fans_pub_->publish(cmd_fans_msg_);
 }
 
-}  // namespace ridgeback_base
+} // namespace ridgeback_base

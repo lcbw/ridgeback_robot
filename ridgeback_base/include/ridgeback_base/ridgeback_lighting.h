@@ -27,14 +27,16 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #ifndef RIDGEBACK_BASE_RIDGEBACK_LIGHTING_H
 #define RIDGEBACK_BASE_RIDGEBACK_LIGHTING_H
 
-#include<vector>
+#include <boost/array.hpp>
+#include <boost/assign/list_of.hpp>
+#include <cstring>
+#include <vector>
 
-#include "ros/ros.h"
-
-#include "geometry_msgs/Twist.h"
-#include "ridgeback_msgs/Lights.h"
-#include "ridgeback_msgs/Status.h"
-#include "puma_motor_msgs/MultiStatus.h"
+#include <geometry_msgs/msg/twist.hpp>
+#include <puma_motor_msgs/msg/multi_status.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <ridgeback_msgs/msg/lights.hpp>
+#include <ridgeback_msgs/msg/status.hpp>
 
 namespace ridgeback_base
 {
@@ -46,57 +48,58 @@ typedef std::vector<pattern> LightsPatterns;
 class RidgebackLighting
 {
 public:
-  explicit RidgebackLighting(ros::NodeHandle* nh);
+    explicit RidgebackLighting(std::shared_ptr<rclcpp::Node> nh);
 
 private:
-  ros::NodeHandle* nh_;
+    std::shared_ptr<rclcpp::Node> nh_;
 
-  ros::Publisher lights_pub_;
+    rclcpp::Publisher<ridgeback_msgs::msg::Lights>::SharedPtr lights_pub_;
 
-  ros::Subscriber user_cmds_sub_;
-  ros::Subscriber mcu_status_sub_;
-  ros::Subscriber puma_status_sub_;
-  ros::Subscriber cmd_vel_sub_;
+    rclcpp::Subscription<ridgeback_msgs::msg::Lights>::SharedPtr user_cmds_sub_;
+    rclcpp::Subscription<ridgeback_msgs::msg::Status>::SharedPtr mcu_status_sub_;
+    rclcpp::Subscription<puma_motor_msgs::msg::MultiStatus>::SharedPtr puma_status_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 
-  puma_motor_msgs::MultiStatus pumas_status_msg_;
-  ridgeback_msgs::Status mcu_status_msg_;
-  geometry_msgs::Twist cmd_vel_msg_;
+    puma_motor_msgs::msg::MultiStatus pumas_status_msg_;
+    ridgeback_msgs::msg::Status mcu_status_msg_;
+    geometry_msgs::msg::Twist cmd_vel_msg_;
 
-  ros::Timer pub_timer_;
-  ros::Timer user_timeout_;
+    rclcpp::TimerBase::SharedPtr pub_timer_;
+    rclcpp::TimerBase::SharedPtr user_timeout_;
 
-  bool allow_user_;
-  bool user_publishing_;
-  uint8_t state_;
-  uint8_t old_state_;
-  uint8_t current_pattern_count_;
-  uint32_t current_pattern_[8];
+    bool allow_user_;
+    bool user_publishing_;
+    uint8_t state_;
+    uint8_t old_state_;
+    uint8_t current_pattern_count_;
+    uint32_t current_pattern_[8];
 
-  struct patterns
-  {
-    LightsPatterns stopped;
-    LightsPatterns fault;
-    LightsPatterns reset;
-    LightsPatterns low_battery;
-    LightsPatterns charged;
-    LightsPatterns charging;
-    LightsPatterns driving;
-    LightsPatterns idle;
-  }
-  patterns_;
+    struct patterns
+    {
+        LightsPatterns stopped;
+        LightsPatterns fault;
+        LightsPatterns reset;
+        LightsPatterns low_battery;
+        LightsPatterns charged;
+        LightsPatterns charging;
+        LightsPatterns driving;
+        LightsPatterns idle;
+    } patterns_;
 
-  void setRGB(ridgeback_msgs::RGB* rgb, uint32_t colour);
-  void setLights(ridgeback_msgs::Lights* lights, uint32_t pattern[8]);
+    void setRGB(ridgeback_msgs::msg::RGB *rgb, uint32_t colour);
+    void setLights(ridgeback_msgs::msg::Lights *lights, uint32_t pattern[8]);
 
-  void updateState();
-  void updatePattern();
+    void updateState();
+    void updatePattern();
 
-  void userCmdCallback(const ridgeback_msgs::Lights::ConstPtr& lights_msg);
-  void mcuStatusCallback(const ridgeback_msgs::Status::ConstPtr& status_msg);
-  void cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg);
-  void pumaStatusCallback(const puma_motor_msgs::MultiStatus::ConstPtr& status_msg);
-  void timerCb(const ros::TimerEvent&);
-  void userTimeoutCb(const ros::TimerEvent&);
+    void userCmdCallback(const ridgeback_msgs::msg::Lights::SharedPtr lights_msg);
+    void mcuStatusCallback(const ridgeback_msgs::msg::Status::SharedPtr status_msg);
+    void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+    void pumaStatusCallback(const puma_motor_msgs::msg::MultiStatus::SharedPtr status_msg);
+    //  void timerCb(const rclcpp::TimerEvent &);
+    //  void userTimeoutCb(const rclcpp::TimerEvent &);
+    void timerCb();
+    void userTimeoutCb();
 };
 
 }  // namespace ridgeback_base

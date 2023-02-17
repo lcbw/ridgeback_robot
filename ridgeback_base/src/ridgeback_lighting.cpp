@@ -73,76 +73,90 @@ namespace Colours
 }  // namespace Colours
 typedef Colours::Colour Colour;
 
-
-RidgebackLighting::RidgebackLighting(ros::NodeHandle* nh) :
-  nh_(nh),
-  allow_user_(false),
-  user_publishing_(false),
-  state_(States::Idle),
-  current_pattern_count_(0)
+RidgebackLighting::RidgebackLighting(std::shared_ptr<rclcpp::Node> nh)
+    : nh_(nh)
+    , allow_user_(false)
+    , user_publishing_(false)
+    , state_(States::Idle)
+    , current_pattern_count_(0)
 {
-  lights_pub_ = nh_->advertise<ridgeback_msgs::Lights>("mcu/cmd_lights", 1);
+    lights_pub_ = nh_->create_publisher<ridgeback_msgs::msg::Lights>("mcu/cmd_lights", 1);
 
-  user_cmds_sub_ = nh_->subscribe("cmd_lights", 1, &RidgebackLighting::userCmdCallback, this);
-  mcu_status_sub_ = nh_->subscribe("mcu/status", 1, &RidgebackLighting::mcuStatusCallback, this);
-  puma_status_sub_ = nh_->subscribe("status", 1, &RidgebackLighting::pumaStatusCallback, this);
-  cmd_vel_sub_ = nh_->subscribe("cmd_vel", 1, &RidgebackLighting::cmdVelCallback, this);
+    user_cmds_sub_ = nh_->create_subscription<ridgeback_msgs::msg::Lights>(
+        "cmd_lights",
+        1,
+        std::bind(&RidgebackLighting::userCmdCallback, this, std::placeholders::_1));
 
-  pub_timer_ = nh_->createTimer(ros::Duration(1.0/5), &RidgebackLighting::timerCb, this);
-  user_timeout_ = nh_->createTimer(ros::Duration(1.0/1), &RidgebackLighting::userTimeoutCb, this);
+    mcu_status_sub_ = nh_->create_subscription<ridgeback_msgs::msg::Status>(
+        "mcu/status",
+        1,
+        std::bind(&RidgebackLighting::mcuStatusCallback, this, std::placeholders::_1));
 
-  using namespace Colours;  // NOLINT(build/namespaces)
-  patterns_.stopped.push_back(boost::assign::list_of(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H));
-  patterns_.stopped.push_back(boost::assign::list_of(Off)(Off)(Off)(Off)(Off)(Off)(Off)(Off));
+    puma_status_sub_ = nh_->create_subscription<puma_motor_msgs::msg::MultiStatus>(
+        "status", 1, std::bind(&RidgebackLighting::pumaStatusCallback, this, std::placeholders::_1));
 
-  patterns_.fault.push_back(
-    boost::assign::list_of(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H));
-  patterns_.fault.push_back(boost::assign::list_of(Off)(Off)(Off)(Off)(Off)(Off)(Off)(Off));
+    cmd_vel_sub_ = nh_->create_subscription<geometry_msgs::msg::Twist>(
+        "cmd_vel", 1, std::bind(&RidgebackLighting::cmdVelCallback, this, std::placeholders::_1));
 
-  patterns_.reset.push_back(boost::assign::list_of(Off)(Red_H)(Off)(Red_H)(Yellow_H)(Yellow_H)(Red_H)(Off));
-  patterns_.reset.push_back(boost::assign::list_of(Red_H)(Off)(Red_H)(Off)(Red_H)(Red_H)(Off)(Red_H));
+    pub_timer_ = nh_->create_wall_timer(std::chrono::milliseconds(200),
+                                        std::bind(&RidgebackLighting::timerCb, this));
+    user_timeout_ = nh_->create_wall_timer(std::chrono::milliseconds(100),
+                                           std::bind(&RidgebackLighting::userTimeoutCb, this));
 
-  patterns_.low_battery.push_back(
-    boost::assign::list_of(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L));
-  patterns_.low_battery.push_back(
-    boost::assign::list_of(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M));
-  patterns_.low_battery.push_back(
-    boost::assign::list_of(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H)(Orange_H));
-  patterns_.low_battery.push_back(
-    boost::assign::list_of(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M)(Orange_M));
-  patterns_.low_battery.push_back(
-    boost::assign::list_of(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L)(Orange_L));
+    using namespace Colours; // NOLINT(build/namespaces)
+    patterns_.stopped.push_back(
+        boost::assign::list_of(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H)(Red_H));
+    patterns_.stopped.push_back(boost::assign::list_of(Off)(Off)(Off)(Off)(Off)(Off)(Off)(Off));
 
-  patterns_.charged.push_back(
-    boost::assign::list_of(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H));
+    patterns_.fault.push_back(boost::assign::list_of(Orange_H)(Orange_H)(Orange_H)(Orange_H)(
+        Orange_H)(Orange_H)(Orange_H)(Orange_H));
+    patterns_.fault.push_back(boost::assign::list_of(Off)(Off)(Off)(Off)(Off)(Off)(Off)(Off));
 
-  patterns_.charging.push_back(
-    boost::assign::list_of(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L));
-  patterns_.charging.push_back(
-    boost::assign::list_of(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M));
-  patterns_.charging.push_back(
-    boost::assign::list_of(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(Green_H));
-  patterns_.charging.push_back(
-    boost::assign::list_of(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M)(Green_M));
-  patterns_.charging.push_back(
-    boost::assign::list_of(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L)(Green_L));
+    patterns_.reset.push_back(
+        boost::assign::list_of(Off)(Red_H)(Off)(Red_H)(Yellow_H)(Yellow_H)(Red_H)(Off));
+    patterns_.reset.push_back(
+        boost::assign::list_of(Red_H)(Off)(Red_H)(Off)(Red_H)(Red_H)(Off)(Red_H));
 
-  patterns_.driving.push_back(
-    boost::assign::list_of(White_M)(White_M)(White_M)(White_M)(Red_M)(Red_M)(Red_M)(Red_M));
+    patterns_.low_battery.push_back(boost::assign::list_of(Orange_L)(Orange_L)(Orange_L)(Orange_L)(
+        Orange_L)(Orange_L)(Orange_L)(Orange_L));
+    patterns_.low_battery.push_back(boost::assign::list_of(Orange_M)(Orange_M)(Orange_M)(Orange_M)(
+        Orange_M)(Orange_M)(Orange_M)(Orange_M));
+    patterns_.low_battery.push_back(boost::assign::list_of(Orange_H)(Orange_H)(Orange_H)(Orange_H)(
+        Orange_H)(Orange_H)(Orange_H)(Orange_H));
+    patterns_.low_battery.push_back(boost::assign::list_of(Orange_M)(Orange_M)(Orange_M)(Orange_M)(
+        Orange_M)(Orange_M)(Orange_M)(Orange_M));
+    patterns_.low_battery.push_back(boost::assign::list_of(Orange_L)(Orange_L)(Orange_L)(Orange_L)(
+        Orange_L)(Orange_L)(Orange_L)(Orange_L));
 
-  patterns_.idle.push_back(
-    boost::assign::list_of(White_L)(White_L)(White_L)(White_L)(Red_L)(Red_L)(Red_L)(Red_L));
+    patterns_.charged.push_back(boost::assign::list_of(Green_H)(Green_H)(Green_H)(Green_H)(Green_H)(
+        Green_H)(Green_H)(Green_H));
+
+    patterns_.charging.push_back(boost::assign::list_of(Green_L)(Green_L)(Green_L)(Green_L)(
+        Green_L)(Green_L)(Green_L)(Green_L));
+    patterns_.charging.push_back(boost::assign::list_of(Green_M)(Green_M)(Green_M)(Green_M)(
+        Green_M)(Green_M)(Green_M)(Green_M));
+    patterns_.charging.push_back(boost::assign::list_of(Green_H)(Green_H)(Green_H)(Green_H)(
+        Green_H)(Green_H)(Green_H)(Green_H));
+    patterns_.charging.push_back(boost::assign::list_of(Green_M)(Green_M)(Green_M)(Green_M)(
+        Green_M)(Green_M)(Green_M)(Green_M));
+    patterns_.charging.push_back(boost::assign::list_of(Green_L)(Green_L)(Green_L)(Green_L)(
+        Green_L)(Green_L)(Green_L)(Green_L));
+
+    patterns_.driving.push_back(
+        boost::assign::list_of(White_M)(White_M)(White_M)(White_M)(Red_M)(Red_M)(Red_M)(Red_M));
+
+    patterns_.idle.push_back(
+        boost::assign::list_of(White_L)(White_L)(White_L)(White_L)(Red_L)(Red_L)(Red_L)(Red_L));
 }
 
-
-void RidgebackLighting::setRGB(ridgeback_msgs::RGB* rgb, uint32_t colour)
+void RidgebackLighting::setRGB(ridgeback_msgs::msg::RGB *rgb, uint32_t colour)
 {
   rgb->red = ((colour & 0xFF0000) >> 16) / 255.0;
   rgb->green = ((colour & 0x00FF00) >> 8) / 255.0;
   rgb->blue = ((colour & 0x0000FF)) / 255.0;
 }
 
-void RidgebackLighting::setLights(ridgeback_msgs::Lights* lights, uint32_t pattern[8])
+void RidgebackLighting::setLights(ridgeback_msgs::msg::Lights *lights, uint32_t pattern[8])
 {
   for (std::size_t i = 0; i < 8; i++)
   {
@@ -150,31 +164,31 @@ void RidgebackLighting::setLights(ridgeback_msgs::Lights* lights, uint32_t patte
   }
 }
 
-void RidgebackLighting::userCmdCallback(const ridgeback_msgs::Lights::ConstPtr& lights_msg)
+void RidgebackLighting::userCmdCallback(const ridgeback_msgs::msg::Lights::SharedPtr lights_msg)
 {
-  if (allow_user_)
-  {
-    lights_pub_.publish(lights_msg);
-  }
-  user_publishing_ = true;
+    if (allow_user_) {
+        lights_pub_->publish(*lights_msg);
+    }
+    user_publishing_ = true;
 }
 
-void RidgebackLighting::mcuStatusCallback(const ridgeback_msgs::Status::ConstPtr& status_msg)
+void RidgebackLighting::mcuStatusCallback(const ridgeback_msgs::msg::Status::SharedPtr status_msg)
 {
   mcu_status_msg_ = *status_msg;
 }
 
-void RidgebackLighting::pumaStatusCallback(const puma_motor_msgs::MultiStatus::ConstPtr& status_msg)
+void RidgebackLighting::pumaStatusCallback(
+    const puma_motor_msgs::msg::MultiStatus::SharedPtr status_msg)
 {
   pumas_status_msg_ = *status_msg;
 }
 
-void RidgebackLighting::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& msg)
+void RidgebackLighting::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   cmd_vel_msg_ = *msg;
 }
 
-void RidgebackLighting::timerCb(const ros::TimerEvent&)
+void RidgebackLighting::timerCb()
 {
   updateState();
 
@@ -189,14 +203,14 @@ void RidgebackLighting::timerCb(const ros::TimerEvent&)
 
   if (!user_publishing_ || !allow_user_)
   {
-    ridgeback_msgs::Lights lights_msg;
-    updatePattern();
-    setLights(&lights_msg, &current_pattern_[0]);
-    lights_pub_.publish(lights_msg);
+      ridgeback_msgs::msg::Lights lights_msg;
+      updatePattern();
+      setLights(&lights_msg, &current_pattern_[0]);
+      lights_pub_->publish(lights_msg);
   }
 }
 
-void RidgebackLighting::userTimeoutCb(const ros::TimerEvent&)
+void RidgebackLighting::userTimeoutCb()
 {
   user_publishing_ = false;
 }
@@ -250,19 +264,18 @@ void RidgebackLighting::updatePattern()
     current_pattern_count_ = 0;
   }
 
-  switch (state_)
-  {
-    case States::Stopped:
-      if (current_pattern_count_ >= patterns_.stopped.size())
-      {
-        current_pattern_count_ = 0;
+  switch (state_) {
+  case States::Stopped:
+      if (current_pattern_count_ >= patterns_.stopped.size()) {
+          current_pattern_count_ = 0;
       }
-      std::memcpy(&current_pattern_, &patterns_.stopped[current_pattern_count_], sizeof(current_pattern_));
+      std::memcpy(&current_pattern_,
+                  &patterns_.stopped[current_pattern_count_],
+                  sizeof(current_pattern_));
       break;
-    case States::Fault:
-      if (current_pattern_count_ >= patterns_.fault.size())
-      {
-        current_pattern_count_ = 0;
+  case States::Fault:
+      if (current_pattern_count_ >= patterns_.fault.size()) {
+          current_pattern_count_ = 0;
       }
       std::memcpy(&current_pattern_, &patterns_.fault[current_pattern_count_], sizeof(current_pattern_));
       break;
@@ -308,7 +321,7 @@ void RidgebackLighting::updatePattern()
       }
       std::memcpy(&current_pattern_, &patterns_.idle[current_pattern_count_], sizeof(current_pattern_));
       break;
-  }
+    }
   old_state_ = state_;
   current_pattern_count_++;
 }

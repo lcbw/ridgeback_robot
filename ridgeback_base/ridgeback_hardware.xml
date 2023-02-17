@@ -1,0 +1,9 @@
+<library path="ridgeback_base">
+  <class name="ridgeback_base/RidgebackHardware"
+         type="ridgeback_base::RidgebackHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      The hardware interface for the Ridgeback robot
+    </description>
+  </class>
+</library>

@@ -1,0 +1,46 @@
+ridgeback_base:
+  gear_ratio: {
+    type: double,
+    default_value: 34.97,
+    description: "Gear ratio of the wheels",
+  }
+  encoder_cpr: {
+    type: double,
+    default_value: 1024,
+    description: "Encoder count-per-revolution",
+  }
+  canbus_dev: {
+    type: string,
+    default_value: "can0",
+    description: "name of canbus interface",
+  }
+  expected_imu_frequency: {
+    type: double,
+    default_value: 50.0,
+    description: "",
+  }
+  wireless_interface: {
+    type: string,
+    default_value: "wlan0",
+    description: "wireless IP address checker",
+  }
+  flip_motor_direction: {
+    type: bool,
+    default_value: false,
+    description: "",
+  }
+  gains_p: {
+    type: double,
+    default_value: 0.1,
+    description: "",
+  }
+  gains_i: {
+    type: double,
+    default_value: 0.01,
+    description: "",
+  }
+  gains_d: {
+    type: double,
+    default_value: 0.0,
+    description: "",
+  }

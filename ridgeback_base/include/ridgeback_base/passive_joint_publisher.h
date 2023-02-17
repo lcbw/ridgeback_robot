@@ -34,40 +34,44 @@
 #ifndef RIDGEBACK_BASE_PASSIVE_JOINT_PUBLISHER_H
 #define RIDGEBACK_BASE_PASSIVE_JOINT_PUBLISHER_H
 
-#include <ros/ros.h>
-#include <sensor_msgs/JointState.h>
+#include <rclcpp/duration.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 
-namespace ridgeback_base
-{
+namespace ridgeback_base {
 
 class PassiveJointPublisher
 {
-public:
-  PassiveJointPublisher(ros::NodeHandle& nh, const ros::V_string& joints, const double frequency)
-  {
-    for (std::size_t i = 0; i < joints.size(); i++)
-    {
-      msg_.name.push_back(joints[i]);
-      msg_.position.push_back(0);
-      msg_.velocity.push_back(0);
-      msg_.effort.push_back(0);
-    }
-    pub_ = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
-    timer_ = nh.createTimer(ros::Duration(1.0/frequency), &PassiveJointPublisher::timerCb, this);
-  }
-
-  void timerCb(const ros::TimerEvent&)
-  {
-    msg_.header.stamp = ros::Time::now();
-    pub_.publish(msg_);
-  }
-
 private:
-  sensor_msgs::JointState msg_;
-  ros::Publisher pub_;
-  ros::Timer timer_;
+    std::shared_ptr<rclcpp::Node> nh;
+    sensor_msgs::msg::JointState msg_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr pub_;
+    rclcpp::TimerBase::SharedPtr timer_;
+
+public:
+    PassiveJointPublisher(std::shared_ptr<rclcpp::Node> nh,
+                          const std::vector<std::string> &joints,
+                          const double frequency)
+    {
+        for (std::size_t i = 0; i < joints.size(); i++) {
+            msg_.name.push_back(joints[i]);
+            msg_.position.push_back(0);
+            msg_.velocity.push_back(0);
+            msg_.effort.push_back(0);
+        }
+        auto timeToSleep = 1.0 / frequency;
+        pub_ = nh->create_publisher<sensor_msgs::msg::JointState>("joint_states", 1);
+        timer_ = nh->create_wall_timer(std::chrono::duration<double>(timeToSleep),
+                                       std::bind(&PassiveJointPublisher::timerCb, this));
+    }
+
+    void timerCb()
+    {
+        msg_.header.stamp = nh->get_clock()->now();
+        pub_->publish(msg_);
+    }
 };
 
-}  // namespace ridgeback_base
+} // namespace ridgeback_base
 
 #endif  // RIDGEBACK_BASE_PASSIVE_JOINT_PUBLISHER_H

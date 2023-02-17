@@ -36,12 +36,15 @@
 
 #include <string>
 
-#include "ros/ros.h"
-#include "std_msgs/Bool.h"
-#include "sensor_msgs/Imu.h"
-#include "diagnostic_updater/diagnostic_updater.h"
-#include "diagnostic_updater/publisher.h"
-#include "ridgeback_msgs/Status.h"
+#include <rclcpp/duration.hpp>
+#include <rclcpp/rclcpp.hpp>
+
+#include "ridgeback_base_parameters.hpp"
+#include <diagnostic_updater/diagnostic_updater.hpp>
+#include <diagnostic_updater/publisher.hpp>
+#include <ridgeback_msgs/msg/status.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/bool.hpp>
 
 namespace ridgeback_base
 {
@@ -49,34 +52,42 @@ namespace ridgeback_base
 class RidgebackDiagnosticUpdater : private diagnostic_updater::Updater
 {
 public:
-  RidgebackDiagnosticUpdater();
+    RidgebackDiagnosticUpdater(std::shared_ptr<rclcpp::Node> nh);
 
-  void generalDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
-  void batteryDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
-  void voltageDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
-  void currentDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
-  void powerDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
-  void temperatureDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void generalDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void batteryDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void voltageDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void currentDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void powerDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
+    void temperatureDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat);
 
-  void statusCallback(const ridgeback_msgs::Status::ConstPtr& status);
-  void imuCallback(const sensor_msgs::Imu::ConstPtr& msg);
-  void wirelessMonitorCallback(const ros::TimerEvent& te);
+    void statusCallback(const ridgeback_msgs::msg::Status::SharedPtr status);
+    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
+    //  void wirelessMonitorCallback(const rclcpp::TimerEvent &te);
+    void wirelessMonitorCallback();
+
+protected:
+    std::shared_ptr<ridgeback_base::ParamListener> param_listener_;
+    Params params_;
 
 private:
-  ros::NodeHandle nh_;
-  ros::Timer timer_;
-  ros::Subscriber status_sub_;
-  ridgeback_msgs::Status::ConstPtr last_status_;
+    std::shared_ptr<rclcpp::Node> nh_;
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Subscription<ridgeback_msgs::msg::Status>::SharedPtr status_sub_;
+    ridgeback_msgs::msg::Status::SharedPtr last_status_;
 
-  double expected_imu_frequency_;
-  diagnostic_updater::TopicDiagnostic* imu_diagnostic_;
-  ros::Subscriber imu_sub_;
+    double expected_imu_frequency;
+    double gear_ratio;
+    double encoder_cpr;
 
-  char hostname_[1024];
+    diagnostic_updater::TopicDiagnostic *imu_diagnostic_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
 
-  std::string wireless_interface_;
-  ros::Timer wireless_monitor_timer_;
-  ros::Publisher wifi_connected_pub_;
+    char hostname_[1024];
+
+    std::string wireless_interface_;
+    rclcpp::TimerBase::SharedPtr wireless_monitor_timer_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr wifi_connected_pub_;
 };
 
 }  // namespace ridgeback_base

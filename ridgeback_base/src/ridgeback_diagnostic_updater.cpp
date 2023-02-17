@@ -36,57 +36,73 @@
 #include <ifaddrs.h>
 #include <unistd.h>
 
-#include "boost/algorithm/string/predicate.hpp"
-#include "diagnostic_updater/update_functions.h"
 #include "ridgeback_base/ridgeback_diagnostic_updater.h"
+#include <boost/algorithm/string/predicate.hpp>
+#include <diagnostic_updater/update_functions.hpp>
+#include <std_msgs/msg/bool.hpp>
 
-namespace ridgeback_base
+namespace ridgeback_base {
+
+RidgebackDiagnosticUpdater::RidgebackDiagnosticUpdater(std::shared_ptr<rclcpp::Node> nh)
+    : Updater(nh)
+    , nh_(nh)
 {
+    param_listener_ = std::make_shared<ridgeback_base::ParamListener>(nh_);
+    params_ = param_listener_->get_params();
+    rclcpp::Logger logger = nh_->get_logger();
+    setHardwareID("unknown");
+    gethostname(hostname_, 1024);
 
-RidgebackDiagnosticUpdater::RidgebackDiagnosticUpdater()
-{
-  setHardwareID("unknown");
-  gethostname(hostname_, 1024);
+    add("General", this, &RidgebackDiagnosticUpdater::generalDiagnostics);
+    add("Battery", this, &RidgebackDiagnosticUpdater::batteryDiagnostics);
+    add("User voltage supplies", this, &RidgebackDiagnosticUpdater::voltageDiagnostics);
+    add("Current consumption", this, &RidgebackDiagnosticUpdater::currentDiagnostics);
+    add("Power consumption", this, &RidgebackDiagnosticUpdater::powerDiagnostics);
+    add("Temperature", this, &RidgebackDiagnosticUpdater::temperatureDiagnostics);
 
-  add("General", this, &RidgebackDiagnosticUpdater::generalDiagnostics);
-  add("Battery", this, &RidgebackDiagnosticUpdater::batteryDiagnostics);
-  add("User voltage supplies", this, &RidgebackDiagnosticUpdater::voltageDiagnostics);
-  add("Current consumption", this, &RidgebackDiagnosticUpdater::currentDiagnostics);
-  add("Power consumption", this, &RidgebackDiagnosticUpdater::powerDiagnostics);
-  add("Temperature", this, &RidgebackDiagnosticUpdater::temperatureDiagnostics);
+    // The arrival of this message runs the update() method and triggers the above callbacks.
+    status_sub_ = nh_->create_subscription<ridgeback_msgs::msg::Status>(
+        "mcu/status",
+        5,
+        std::bind(&RidgebackDiagnosticUpdater::statusCallback, this, std::placeholders::_1));
 
-  // The arrival of this message runs the update() method and triggers the above callbacks.
-  status_sub_ = nh_.subscribe("mcu/status", 5, &RidgebackDiagnosticUpdater::statusCallback, this);
+    // These message frequencies are reported on separately.
+    // this function does in fact take 3 doubles, the first one is an &, the second is a *, and the third is regular
+    imu_diagnostic_ = new diagnostic_updater::TopicDiagnostic(
+        "/imu/data_raw",
+        *this,
+        diagnostic_updater::FrequencyStatusParam(&(params_.expected_imu_frequency),
+                                                 &(params_.expected_imu_frequency),
+                                                 0.15),
+        diagnostic_updater::TimeStampStatusParam(-1, 1.0));
+    imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
+        "/imu/data_raw",
+        5,
+        std::bind(&RidgebackDiagnosticUpdater::imuCallback, this, std::placeholders::_1));
 
-  // These message frequencies are reported on separately.
-  ros::param::param("~expected_imu_frequency", expected_imu_frequency_, 50.0);
-  imu_diagnostic_ = new diagnostic_updater::TopicDiagnostic("/imu/data_raw", *this,
-      diagnostic_updater::FrequencyStatusParam(&expected_imu_frequency_, &expected_imu_frequency_, 0.15),
-      diagnostic_updater::TimeStampStatusParam(-1, 1.0));
-  imu_sub_ = nh_.subscribe("/imu/data_raw", 5, &RidgebackDiagnosticUpdater::imuCallback, this);
-
-  // Publish whether the wireless interface has an IP address every second.
-  ros::param::param<std::string>("~wireless_interface", wireless_interface_, "wlan0");
-  ROS_INFO_STREAM("Checking for wireless connectivity on interface: " << wireless_interface_);
-  wifi_connected_pub_ = nh_.advertise<std_msgs::Bool>("wifi_connected", 1);
-  wireless_monitor_timer_ =
-    nh_.createTimer(ros::Duration(1.0), &RidgebackDiagnosticUpdater::wirelessMonitorCallback, this);
+    // Publish whether the wireless interface has an IP address every second.
+    RCLCPP_INFO(logger,
+                "Checking for wireless connectivity on interface: %s ",
+                params_.wireless_interface);
+    wifi_connected_pub_ = nh_->create_publisher<std_msgs::msg::Bool>("wifi_connected", 1);
+    wireless_monitor_timer_
+        = nh_->create_wall_timer(std::chrono::milliseconds(1000),
+                                 std::bind(&RidgebackDiagnosticUpdater::wirelessMonitorCallback,
+                                           this));
 }
 
 void RidgebackDiagnosticUpdater::generalDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat)
 {
-  stat.addf("MCU uptime", "%d seconds", last_status_->mcu_uptime.toSec());
-  stat.add("External stop status", last_status_->external_stop_present ? "present" : "absent");
-  stat.add("Run/stop status", last_status_->external_stop_present ? "running" : "stopped");
+    stat.addf("MCU uptime", "%i seconds", last_status_->mcu_uptime);
+    stat.add("External stop status", last_status_->external_stop_present ? "present" : "absent");
+    stat.add("Run/stop status", last_status_->external_stop_present ? "running" : "stopped");
 
-  if (!last_status_->drivers_active)
-  {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "Stop loop open, platform immobilized.");
-  }
-  else
-  {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "System OK.");
-  }
+    if (!last_status_->drivers_active) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                     "Stop loop open, platform immobilized.");
+    } else {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "System OK.");
+    }
 }
 
 void RidgebackDiagnosticUpdater::batteryDiagnostics(diagnostic_updater::DiagnosticStatusWrapper &stat)
@@ -95,23 +111,25 @@ void RidgebackDiagnosticUpdater::batteryDiagnostics(diagnostic_updater::Diagnost
 
   if (last_status_->measured_battery > 30.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "Battery overvoltage.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Battery overvoltage.");
   }
   else if (last_status_->measured_battery < 1.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "Battery voltage not detected, check BATT fuse.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                   "Battery voltage not detected, check BATT fuse.");
   }
   else if (last_status_->measured_battery < 20.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "Battery critically under voltage.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                   "Battery critically under voltage.");
   }
   else if (last_status_->measured_battery < 24.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "Battery low voltage.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Battery low voltage.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "Battery OK.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Battery OK.");
   }
 }
 
@@ -122,20 +140,22 @@ void RidgebackDiagnosticUpdater::voltageDiagnostics(diagnostic_updater::Diagnost
 
   if (last_status_->measured_12v > 12.5 || last_status_->measured_5v > 5.5)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR,
-        "User supply overvoltage. Accessories may be damaged.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                   "User supply overvoltage. Accessories may be damaged.");
   }
   else if (last_status_->measured_12v < 1.0 || last_status_->measured_5v < 1.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "User supplies absent. Check tray fuses.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                   "User supplies absent. Check tray fuses.");
   }
   else if (last_status_->measured_12v < 11.0 || last_status_->measured_5v < 4.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "Voltage supplies undervoltage. Check loading levels.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                   "Voltage supplies undervoltage. Check loading levels.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "User supplies OK.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "User supplies OK.");
   }
 }
 
@@ -145,19 +165,19 @@ void RidgebackDiagnosticUpdater::currentDiagnostics(diagnostic_updater::Diagnost
 
   if (last_status_->total_current > 32.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "Current draw critical.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Current draw critical.");
   }
   else if (last_status_->total_current > 20.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "Current draw warning.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "Current draw warning.");
   }
   else if (last_status_->total_current > 10.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "Current draw requires monitoring.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Current draw requires monitoring.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "Current draw nominal.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Current draw nominal.");
   }
 }
 
@@ -168,15 +188,17 @@ void RidgebackDiagnosticUpdater::powerDiagnostics(diagnostic_updater::Diagnostic
 
   if (last_status_->total_power_consumed > 260.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "Power consumed exceeds capacity of standard battery.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                   "Power consumed exceeds capacity of standard battery.");
   }
   else if (last_status_->total_power_consumed > 220.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "Power consumed approaches capacity of standard battery.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                   "Power consumed approaches capacity of standard battery.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "Battery OK.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Battery OK.");
   }
 }
 
@@ -187,55 +209,56 @@ void RidgebackDiagnosticUpdater::temperatureDiagnostics(diagnostic_updater::Diag
 
   if (last_status_->pcb_temperature > 100.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "PCB temperature too HOT.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "PCB temperature too HOT.");
   }
   else if (last_status_->pcb_temperature > 60.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "PCB temperature getting warm.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "PCB temperature getting warm.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "PCB temperature OK.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "PCB temperature OK.");
   }
 
   if (last_status_->mcu_temperature > 100.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::ERROR, "MCU temperature too HOT.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "MCU temperature too HOT.");
   }
   else if (last_status_->mcu_temperature > 60.0)
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::WARN, "MCU temperature getting warm.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "MCU temperature getting warm.");
   }
   else
   {
-    stat.summary(diagnostic_msgs::DiagnosticStatus::OK, "MCU temperature OK.");
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "MCU temperature OK.");
   }
 }
 
-void RidgebackDiagnosticUpdater::statusCallback(const ridgeback_msgs::Status::ConstPtr& status)
+void RidgebackDiagnosticUpdater::statusCallback(const ridgeback_msgs::msg::Status::SharedPtr status)
 {
   // Fresh data from the MCU, publish a diagnostic update.
   last_status_ = status;
   setHardwareID(hostname_ + '-' + last_status_->hardware_id);
-  update();
+  force_update();
 }
 
-void RidgebackDiagnosticUpdater::imuCallback(const sensor_msgs::Imu::ConstPtr& msg)
+void RidgebackDiagnosticUpdater::imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
 {
   imu_diagnostic_->tick(msg->header.stamp);
 }
 
-void RidgebackDiagnosticUpdater::wirelessMonitorCallback(const ros::TimerEvent& te)
+void RidgebackDiagnosticUpdater::wirelessMonitorCallback()
 {
-  std_msgs::Bool wifi_connected_msg;
-  wifi_connected_msg.data = false;
+    std_msgs::msg::Bool wifi_connected_msg;
+    wifi_connected_msg.data = false;
 
-  // Get system structure of interface IP addresses.
-  struct ifaddrs* ifa_head;
-  if (getifaddrs(&ifa_head) != 0)
-  {
-    ROS_WARN("System call getifaddrs returned error code. Unable to detect network interfaces.");
-    return;
+    // Get system structure of interface IP addresses.
+    struct ifaddrs *ifa_head;
+    if (getifaddrs(&ifa_head) != 0) {
+        RCLCPP_WARN(
+            rclcpp::get_logger("my_logger"),
+            "System call getifaddrs returned error code. Unable to detect network interfaces.");
+        return;
   }
 
   // Iterate structure looking for the wireless interface.
@@ -257,7 +280,7 @@ void RidgebackDiagnosticUpdater::wirelessMonitorCallback(const ros::TimerEvent& 
 
   // Free structure, publish result message.
   freeifaddrs(ifa_head);
-  wifi_connected_pub_.publish(wifi_connected_msg);
+  wifi_connected_pub_->publish(wifi_connected_msg);
 }
 
-}  // namespace ridgeback_base
+} // namespace ridgeback_base

@@ -34,10 +34,10 @@
 #ifndef RIDGEBACK_BASE_RIDGEBACK_COOLING_H
 #define RIDGEBACK_BASE_RIDGEBACK_COOLING_H
 
-#include "ros/ros.h"
-#include "geometry_msgs/Twist.h"
-#include "ridgeback_msgs/Status.h"
-#include "ridgeback_msgs/Fans.h"
+#include <geometry_msgs/msg/twist.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <ridgeback_msgs/msg/fans.hpp>
+#include <ridgeback_msgs/msg/status.hpp>
 
 namespace ridgeback_base
 {
@@ -45,29 +45,29 @@ namespace ridgeback_base
 class RidgebackCooling
 {
 public:
-  explicit RidgebackCooling(ros::NodeHandle* nh);
+    explicit RidgebackCooling(std::shared_ptr<rclcpp::Node> nh);
 
 private:
-  ros::NodeHandle* nh_;
+    std::shared_ptr<rclcpp::Node> nh_;
 
-  ros::Publisher cmd_fans_pub_;
+    rclcpp::Publisher<ridgeback_msgs::msg::Fans>::SharedPtr cmd_fans_pub_;
 
-  ros::Subscriber status_sub_;
-  ros::Subscriber cmd_vel_sub_;
+    rclcpp::Subscription<ridgeback_msgs::msg::Status>::SharedPtr status_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 
-  ros::Timer cmd_fans_timer_;
+    rclcpp::TimerBase::SharedPtr cmd_fans_timer_;
 
-  bool charger_disconnected_;
-  ridgeback_msgs::Fans cmd_fans_msg_;
-  double last_motion_cmd_time_;
+    bool charger_disconnected_;
+    ridgeback_msgs::msg::Fans cmd_fans_msg_;
+    rclcpp::Time last_motion_cmd_time_;
 
-  static constexpr auto LINEAR_VEL_THRESHOLD  =  0.1;  // m/s
-  static constexpr auto ANGULAR_VEL_THRESHOLD  = 0.4;  // rad/s
-  static constexpr auto MOITON_COMMAND_TIMEOUT = 3.0;  // seconds
+    static constexpr auto LINEAR_VEL_THRESHOLD = 0.1;   // m/s
+    static constexpr auto ANGULAR_VEL_THRESHOLD = 0.4;  // rad/s
+    static constexpr auto MOITON_COMMAND_TIMEOUT = 3.0; // seconds
 
-  void statusCallback(const ridgeback_msgs::Status::ConstPtr& status);
-  void cmdVelCallback(const geometry_msgs::Twist::ConstPtr& twist);
-  void cmdFansCallback(const ros::TimerEvent&);
+    void statusCallback(const ridgeback_msgs::msg::Status::SharedPtr status);
+    void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr twist);
+    void cmdFansCallback();
 };
 
 }  // namespace ridgeback_base

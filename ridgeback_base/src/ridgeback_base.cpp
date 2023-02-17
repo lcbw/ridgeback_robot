@@ -32,72 +32,69 @@
  *
  */
 
-#include <boost/asio.hpp>
+// this is the only thing I need to port hooray!! //
+//#include <boost/asio.hpp>
 #include <boost/bind.hpp>
-#include <boost/thread.hpp>
+//#include <boost/thread.hpp>
 #include <chrono>  // NOLINT(build/c++11)
 #include <memory>
 #include <string>
 #include <thread>  // NOLINT(build/c++11)
 
-#include "controller_manager/controller_manager.h"
+//#include "rosserial_server/udp_socket_session.h"
+#include "ridgeback_base/passive_joint_publisher.h"
+#include "ridgeback_base/ridgeback_cooling.h"
 #include "ridgeback_base/ridgeback_diagnostic_updater.h"
 #include "ridgeback_base/ridgeback_hardware.h"
-#include "ridgeback_base/ridgeback_cooling.h"
 #include "ridgeback_base/ridgeback_lighting.h"
-#include "ridgeback_base/passive_joint_publisher.h"
-#include "puma_motor_driver/diagnostic_updater.h"
-#include "ros/ros.h"
-#include "rosserial_server/udp_socket_session.h"
+#include <controller_interface/controller_interface.hpp>
+#include <controller_manager/controller_manager.hpp>
+#include <puma_motor_driver/diagnostic_updater.hpp>
+#include <puma_motor_driver/socketcan_gateway.hpp>
+#include <rclcpp/rclcpp.hpp>
 
-using boost::asio::ip::udp;
-using boost::asio::ip::address;
+//using boost::asio::ip::udp;
+//using boost::asio::ip::address;
 
-void controlThread(ros::Rate rate, ridgeback_base::RidgebackHardware* robot, controller_manager::ControllerManager* cm)
+void controlThread(double rate,
+                   ridgeback_base::RidgebackHardware &robot,
+                   controller_manager::ControllerManager &cm)
 {
   std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now();
 
-  while (ros::ok())
-  {
-    // Calculate monotonic time elapsed
-    std::chrono::steady_clock::time_point this_time = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed_duration = this_time - last_time;
-    ros::Duration elapsed(elapsed_duration.count());
-    last_time = this_time;
+  while (rclcpp::ok()) {
+      // Calculate monotonic time elapsed
+      std::chrono::steady_clock::time_point this_time = std::chrono::steady_clock::now();
+      std::chrono::duration<double> elapsed_duration = this_time - last_time;
+      rclcpp::Duration elapsed(elapsed_duration.count());
+      last_time = this_time;
 
-    if (robot->isActive())
-    {
-      robot->powerHasNotReset();
-      robot->updateJointsFromHardware();
-    }
-    else
-    {
-      robot->configure();
-    }
+      if (robot.isActive()) {
+          robot.powerHasNotReset();
+          robot.updateJointsFromHardware();
+      } else {
+          robot.configure();
+      }
 
-    cm->update(ros::Time::now(), elapsed, robot->inReset());
+      cm.update();
 
-    if (robot->isActive())
-    {
-      robot->command();
-      robot->requestData();
-    }
-    else
-    {
-      robot->verify();
-    }
+      if (robot.isActive()) {
+          robot.command();
+          robot.requestData();
+      } else {
+          robot.verify();
+      }
 
-    rate.sleep();
+      rclcpp::Rate(rate).sleep();
   }
 }
 
-void canReadThread(ros::Rate rate, ridgeback_base::RidgebackHardware* robot)
+void canReadThread(double rate, ridgeback_base::RidgebackHardware &robot)
 {
-  while (ros::ok())
-  {
-    robot->canRead();
-    rate.sleep();
-  }
+    while (rclcpp::ok()) {
+        robot.canRead();
+        rclcpp::Rate(rate).sleep();
+    }
 }
 
 int main(int argc, char* argv[])
@@ -107,68 +104,84 @@ int main(int argc, char* argv[])
   static constexpr auto BASE_IP = "192.168.131.1";
   static constexpr auto MCU_IP = "192.168.131.2";
   static constexpr auto ROSSERIAL_PORT = 11411;
-  static constexpr auto CAN_READ_THREAD_RATE = 200.0;
-  static constexpr auto CONTROL_THREAD_RATE = 25.0;
+  //  static constexpr auto CAN_READ_THREAD_RATE = 200.0;
+  //  static constexpr auto CONTROL_THREAD_RATE = 25.0;
   static constexpr auto PASSIVE_JOINT_RATE = 50.0;
-  static const ros::V_string PASSIVE_JOINT_NAMES = {("front_rocker")};
+  static const std::vector<std::string> PASSIVE_JOINT_NAMES = {("front_rocker")};
 
+  double CAN_READ_THREAD_RATE = 200.0;
+  double CONTROL_THREAD_RATE = 25.0;
   // Initialize ROS node.
-  ros::init(argc, argv, NODE_NAME);
-  ros::NodeHandle nh, pnh("~");
+  rclcpp::init(argc, argv);
+  std::shared_ptr<rclcpp::Node> nh;
 
   // ROS parameters
-  std::string canbus_dev;
-  pnh.param<std::string>("canbus_dev", canbus_dev, "can0");
-  bool use_mcu = true;
-  pnh.param<bool>("use_mcu", use_mcu, true);
+  std::string canbus_dev = "canbus_dev";
+  std::string gateway_name = "can0";
+  //  nh.param<std::string>("canbus_dev", canbus_dev, "can0");
+  //  bool use_mcu = true;
+  //  pnh.param<bool>("use_mcu", use_mcu, true);
 
   // Create the socket rosserial server in a background ASIO event loop.
-  boost::asio::io_service io_service;
-  std::shared_ptr<rosserial_server::UdpSocketSession> socket(nullptr);
-  boost::thread socket_thread;
+  //  boost::asio::io_service io_service;
+  //  std::shared_ptr<rosserial_server::UdpSocketSession> socket(nullptr);
+  //  std::thread socket_thread;
 
-  if (use_mcu)
-  {
-    socket = std::make_shared<rosserial_server::UdpSocketSession>(io_service,
-        udp::endpoint(address::from_string(BASE_IP), ROSSERIAL_PORT),
-        udp::endpoint(address::from_string(MCU_IP), ROSSERIAL_PORT));
-    socket_thread = boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
-  }
+  //  if (use_mcu)
+  //  {
+  //    socket = std::make_shared<rosserial_server::UdpSocketSession>(io_service,
+  //        udp::endpoint(address::from_string(BASE_IP), ROSSERIAL_PORT),
+  //        udp::endpoint(address::from_string(MCU_IP), ROSSERIAL_PORT));
+  //    socket_thread = boost::thread(boost::bind(&boost::asio::io_service::run, &io_service));
+  //  }
 
-  puma_motor_driver::SocketCANGateway gateway(canbus_dev);
-  ridgeback_base::RidgebackHardware ridgeback(nh, pnh, gateway);
+  std::shared_ptr<puma_motor_driver::SocketCANGateway> gateway
+      = std::make_shared<puma_motor_driver::SocketCANGateway>(gateway_name);
+  std::shared_ptr<ridgeback_base::RidgebackHardware> ridgeback
+      = std::make_shared<ridgeback_base::RidgebackHardware>();
 
   // Configure the CAN connection
-  ridgeback.init();
+  ridgeback->start();
   // Create a thread to start reading can messages.
-  std::thread can_read_thread(&canReadThread, ros::Rate(CAN_READ_THREAD_RATE), &ridgeback);
 
-  // Background thread for the controls callback.
-  ros::NodeHandle controller_nh("");
-  controller_manager::ControllerManager cm(&ridgeback, controller_nh);
-  std::thread control_thread(&controlThread, ros::Rate(CONTROL_THREAD_RATE), &ridgeback, &cm);
+  // looks like std::thread and std::bind are incompatible because bind will make things into ptrs
+  std::thread can_read_thread(canReadThread, CAN_READ_THREAD_RATE, std::ref(*ridgeback));
+
+  std::shared_ptr<rclcpp::Executor> executor
+      = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+  std::string manager_node_name = "controller_manager";
+
+  std::shared_ptr<controller_manager::ControllerManager> cm
+      = std::make_shared<controller_manager::ControllerManager>(executor, manager_node_name);
+
+  std::thread control_thread(controlThread,
+                             CONTROL_THREAD_RATE,
+                             std::ref(*ridgeback),
+                             std::ref(*cm));
 
   // Create diagnostic updater, to update itself on the ROS thread.
-  ridgeback_base::RidgebackDiagnosticUpdater ridgeback_diagnostic_updater;
-  puma_motor_driver::PumaMotorDriverDiagnosticUpdater puma_motor_driver_diagnostic_updater;
+  ridgeback_base::RidgebackDiagnosticUpdater ridgeback_diagnostic_updater(nh);
+  puma_motor_driver::PumaMotorDriverDiagnosticUpdater puma_motor_driver_diagnostic_updater("nh");
 
   // Joint state publisher for passive front axle.
   ridgeback_base::PassiveJointPublisher passive_joint_publisher(nh, PASSIVE_JOINT_NAMES, PASSIVE_JOINT_RATE);
 
   // Cooling control for the fans.
-  std::shared_ptr<ridgeback_base::RidgebackCooling> cooling(nullptr);
+  std::shared_ptr<ridgeback_base::RidgebackCooling> cooling
+      = std::make_shared<ridgeback_base::RidgebackCooling>(nh); // tried &nh and that didn't work
   // Lighting control.
-  std::shared_ptr<ridgeback_base::RidgebackLighting> lighting(nullptr);
+  std::shared_ptr<ridgeback_base::RidgebackLighting> lighting
+      = std::make_shared<ridgeback_base::RidgebackLighting>(nh); // tried &nh and that didn't work
 
-  if (use_mcu)
-  {
-    cooling = std::make_shared<ridgeback_base::RidgebackCooling>(&nh);
-    lighting = std::make_shared<ridgeback_base::RidgebackLighting>(&nh);
-  }
+  //  if (use_mcu)
+  //  {
+  //  }
 
   // Foreground ROS spinner for ROS callbacks, including rosserial, diagnostics
-  ros::spin();
 
+  rclcpp::spin(nh);
+  executor->add_node(cm);
+  executor->spin();
   // End threads
   can_read_thread.join();
   control_thread.join();

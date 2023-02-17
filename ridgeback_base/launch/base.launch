@@ -1,30 +1,32 @@
+<!-- this might be ported! -->
+
 <launch>
-  <include file="$(find ridgeback_description)/launch/description.launch" />
+  <group>
+    <include file="$(find-pkg-share ridgeback_description)/launch/description.launch" />
+    <!-- Mecanum controller and basic localization -->
+    <include file="$(find-pkg-share ridgeback_control)/launch/control.launch" />
 
-  <node pkg="rosserial_python" type="message_info_service.py" name="rosserial_message_info" />
+    <!-- Teleoperation via joystick and rviz interactive markers -->
+    <include file="$(find-pkg-share ridgeback_control)/launch/teleop.launch" />
+  </group>
 
-  <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imu_filter">
-    <rosparam file="$(eval optenv('RIDGEBACK_MAG_CONFIG', find('ridgeback_base')+'/config/mag_config_default.yaml'))" />
-    <rosparam>
-      gain: 0.1
-      zeta: 0.001
-      publish_tf: false
-      use_magnetic_field_msg: true
-    </rosparam>
+  <node pkg="rosserial_python" exec="message_info_service.py" name="rosserial_message_info" />
+
+  <node pkg="imu_filter_madgwick" exec="imu_filter_node" name="imu_filter">
+    <param from="$(eval env('RIDGEBACK_MAG_CONFIG', find-pkg-share('ridgeback_base')+'/config/mag_config_default.yaml'))" />
+    <param name='gain' value='0.1'/>
+    <param name='zeta' value='0.001'/>
+    <param name='publish_tf' value='false'/>
+    <param name='use_magnetic_field_msg' value='true'/>
+    <param name='gain' value='0.1'/>
   </node>
 
-  <node pkg="ridgeback_base" type="ridgeback_node" name="ridgeback_node" output="screen" >
-    <param name="use_mcu" type="bool" value="$(optenv RIDGEBACK_USE_MCU 1)" />
+  <node pkg="ridgeback_base" exec="ridgeback_node" name="ridgeback_node" output="screen" >
+    <param name="use_mcu" exec="bool" value="$(optenv RIDGEBACK_USE_MCU 1)" />
   </node>
-
-  <!-- Mecanum controller and basic localization -->
-  <include file="$(find ridgeback_control)/launch/control.launch" />
-
-  <!-- Teleoperation via joystick and rviz interactive markers -->
-  <include file="$(find ridgeback_control)/launch/teleop.launch" />
 
   <!-- Diagnostic Aggregator for robot monitor usage -->
-  <node pkg="diagnostic_aggregator" type="aggregator_node" name="diagnostic_aggregator">
-    <rosparam command="load" file="$(find ridgeback_base)/config/diagnostic_analyzers.yaml" />
+  <node pkg="diagnostic_aggregator" exec="aggregator_node" name="diagnostic_aggregator">
+    <param from="$(find-pkg-share ridgeback_base)/config/diagnostic_analyzers.yaml" />
   </node>
 </launch>
