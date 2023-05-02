@@ -8,11 +8,11 @@ install(DIRECTORY launch config
 )
 
 install(FILES scripts/can-udp-bridge.conf scripts/can-udp-bridge.sh
-  DESTINATION bin
+  DESTINATION share/${PROJECT_NAME}
 )
 
 install(PROGRAMS scripts/install
-  DESTINATION bin
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 #if (BUILD_TESTING)
