@@ -12,8 +12,9 @@ def get_package_file(package, file_path):
     return absolute_file_path
 
 main_job = robot_upstart.Job(workspace_setup=os.environ['ROBOT_SETUP'])
+main_job.symlink=True
 main_job.add(package="ridgeback_base", filename="launch/base.launch")
-main_job.add(package="ridgeback_bringup", filename="launch/accessories.launch")
+# main_job.add(package="ridgeback_bringup", filename="launch/accessories.launch")
 main_job.install()
 
 # Wait to for can-udp-bridge to be up before starting ROS

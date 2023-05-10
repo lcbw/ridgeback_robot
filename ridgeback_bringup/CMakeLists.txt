@@ -12,7 +12,7 @@ install(FILES scripts/can-udp-bridge.conf scripts/can-udp-bridge.sh
 )
 
 install(PROGRAMS scripts/install
-  DESTINATION bin
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 #if (BUILD_TESTING)

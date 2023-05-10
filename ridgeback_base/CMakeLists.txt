@@ -16,6 +16,8 @@ endif()
 
 
 find_package(ament_cmake REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(socketcan_interface REQUIRED)
 find_package(backward_ros REQUIRED)
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
@@ -46,24 +48,33 @@ generate_parameter_library(
   ridgeback_base_parameters
   config/ridgeback_base_parameters.yaml
 )
-add_executable(ridgeback_base
-  src/ridgeback_base.cpp
-  src/ridgeback_cooling.cpp
-  src/ridgeback_diagnostic_updater.cpp
+#add_executable(ridgeback_base
+#  src/ridgeback_base.cpp
+#  src/ridgeback_cooling.cpp
+#  src/ridgeback_diagnostic_updater.cpp
+#  src/ridgeback_hardware.cpp
+#  src/ridgeback_lighting.cpp
+#  )
+
+add_library(
+  ${PROJECT_NAME}
+  SHARED
   src/ridgeback_hardware.cpp
-  src/ridgeback_lighting.cpp
-  )
+)
 
-target_link_libraries(ridgeback_base PUBLIC ridgeback_base_parameters)
+target_link_libraries(${PROJECT_NAME} PUBLIC ridgeback_base_parameters)
 
-ament_target_dependencies(ridgeback_base PUBLIC
-${THIS_PACKAGE_INCLUDE_DEPENDS}
-controller_interface
-hardware_interface
-rclcpp)
 
-target_include_directories(ridgeback_base SYSTEM PUBLIC
+target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
   include)
+
+ament_target_dependencies(${PROJECT_NAME} PUBLIC
+  ${THIS_PACKAGE_INCLUDE_DEPENDS}
+  pluginlib
+  controller_interface
+  hardware_interface
+  socketcan_interface
+  rclcpp)
 #  ${controller_interface_INCLUDE_DIRS}
 #  ${diagnostic_updater_INCLUDE_DIRS}
 #  ${realtime_tools_INCLUDE_DIRS}
@@ -81,8 +92,18 @@ target_include_directories(ridgeback_base SYSTEM PUBLIC
 
 target_compile_definitions(ridgeback_base PRIVATE "RIDGEBACK_BASE_BUILDING_DLL")
 
-install(DIRECTORY config launch
-  DESTINATION share/${PROJECT_NAME})
+pluginlib_export_plugin_description_file(hardware_interface ridgeback_hardware.xml)
+
+
+install(
+  TARGETS ${PROJECT_NAME}
+  DESTINATION lib
+)
+
+install(
+  DIRECTORY launch config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 install(DIRECTORY include/ridgeback_base
   DESTINATION include)
@@ -90,7 +111,7 @@ install(DIRECTORY include/ridgeback_base
 install(PROGRAMS scripts/calibrate_compass scripts/compute_calibration
  DESTINATION bin)
 
-install(TARGETS ridgeback_base ridgeback_base_parameters
+install(TARGETS ridgeback_base_parameters
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
 #  RUNTIME DESTINATION bin
@@ -105,11 +126,10 @@ install(TARGETS ridgeback_base ridgeback_base_parameters
 #  roslint_add_test()
 #endif()
 
-pluginlib_export_plugin_description_file(hardware_interface ridgeback_hardware.xml)
 
 #ament_export_targets(export_ridgeback_node HAS_LIBRARY_TARGET)
 ament_export_dependencies(controller_interface realtime_tools hardware_interface) ## transitive dependencies - you shouldn't need to findpackage these libararies yourself if you're just using *this, here*
-#ament_export_include_directories(include) ## what other packages need when linking against this library (headers)
-ament_export_libraries(ridgeback_base)  ## what other packages need when linking against this library (source files)
+ament_export_include_directories(include) ## what other packages need when linking against this library (headers)
+ament_export_libraries(${PROJECT_NAME})  ## what other packages need when linking against this library (source files)
 
 ament_package()
