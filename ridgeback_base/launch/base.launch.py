@@ -19,27 +19,29 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 
+
 def generate_launch_description():
-  description_path = os.path.join(get_package_share_directory('ridgeback_description'), 'launch', 'description.launch.py')
+    description_path = os.path.join(get_package_share_directory(
+        'ridgeback_description'), 'launch', 'description.launch.py')
 
-  # Specify the actions
-  description_cmd = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(description_path),
-  )
+    # Specify the actions
+    description_cmd = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(description_path),
+    )
 
-  start_ridgeback_control = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('ridgeback_control'), 'launch', 'control.launch.py')),
-  )
+    start_ridgeback_control = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('ridgeback_control'), 'launch', 'control.launch.py')),
+    )
 
-  start_teleop_control = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('ridgeback_control'), 'launch', 'teleop.launch.py')),
-  )
+    start_teleop_control = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('ridgeback_control'), 'launch', 'teleop.launch.py')),
+    )
 
-  ld = LaunchDescription()
-  ld.add_action(description_cmd)
-  ld.add_action(start_ridgeback_control)
-  ld.add_action(start_teleop_control)
+    ld = LaunchDescription()
+    ld.add_action(description_cmd)
+    ld.add_action(start_ridgeback_control)
+    ld.add_action(start_teleop_control)
 
-  return ld
+    return ld

@@ -185,7 +185,6 @@ std::vector<hardware_interface::StateInterface> RidgebackHardware::export_state_
                                                hardware_interface::HW_IF_VELOCITY,
                                                &joints_[i].velocity));
     }
-
     return state_interfaces;
 }
 
